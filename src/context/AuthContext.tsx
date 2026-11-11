@@ -36,8 +36,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch {
       // fallback
     }
-    // Start authenticated by default with Admin for immediate review ease, or default to login
-    return CURRENT_ADMIN;
+    return null;
   });
 
   const [authScreen, setAuthScreen] = useState<AuthScreenState>(() => {
