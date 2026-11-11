@@ -80,7 +80,9 @@ export const TwoFactorScreen: React.FC = () => {
               </label>
               <div className="relative" onPaste={handlePaste}>
                 <input
-                  ref={(el) => (inputsRef.current[0] = el)}
+                  ref={(el) => {
+                    inputsRef.current[0] = el;
+                  }}
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
