@@ -30,14 +30,25 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenGlobalSearch,
   onSelectModule
 }) => {
-  const { user, isAdmin, isModerator, logout, switchRole } = useAuth();
-  const { notifications, communityReports, challengeProofs, resetAllData } = useData();
+  const {
+    user,
+    isSuperAdmin,
+    isAdmin,
+    isModerator,
+    logout,
+    switchRole,
+    toggleModeratorPermission,
+    hasPermission
+  } = useAuth();
+  const { notifications, communityReports, challengeProofs, chatDocuments, resetAllData } = useData();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
 
   const profileRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const roleRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -48,6 +59,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setIsNotifOpen(false);
       }
+      if (roleRef.current && !roleRef.current.contains(e.target as Node)) {
+        setIsRoleSwitcherOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -55,15 +69,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   const titles: Record<NavModule, { title: string; breadcrumb: string }> = {
     dashboard: { title: 'Dashboard Overview', breadcrumb: 'Overview & Key Metrics' },
+    users: { title: 'User Management', breadcrumb: 'Volunteers, Role Capacity & Sanctions' },
     announcements: { title: 'Announcements Management', breadcrumb: 'Broadcasts & Legislative Updates' },
     events: { title: 'Events Management', breadcrumb: 'Townhalls, Legal Missions & Attendance' },
     challenges: { title: 'CHELlenges Management', breadcrumb: 'Monthly Tasks & Proof Review Queue' },
-    community: { title: 'Community Management', breadcrumb: 'Forum Moderation & Reports' },
-    users: { title: 'User Management', breadcrumb: 'Volunteers, Roles & Sanctions' },
+    community: { title: 'Community & Forum', breadcrumb: 'Forum Topics & Discussions' },
+    moderation: { title: 'Moderation & Reports', breadcrumb: 'Infraction Queue, Sanctions & Blocklist' },
     notifications: { title: 'Notifications Management', breadcrumb: 'Push Notifications (FCM / APNs)' },
+    chat: { title: 'Chat with Chel Administration', breadcrumb: 'RAG Knowledge Library, Prompts & Pilot' },
+    reports: { title: 'Reports & Analytics', breadcrumb: 'Civic Engagement Reporting & Exports' },
     audit: { title: 'Audit Log', breadcrumb: 'Immutable Administrative Activity Stream' },
-    settings: { title: 'Application Settings', breadcrumb: 'Platform Config & Guidelines' },
-    reports: { title: 'Reports & Analytics', breadcrumb: 'Civic Engagement Reporting & Exports' }
+    settings: { title: 'Application Settings', breadcrumb: 'Platform Config & Guidelines' }
   };
 
   const pendingReportsCount = communityReports.filter((r) => r.status === 'pending').length;
@@ -98,6 +114,120 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Role Switcher Pill (QA & Demo Role Emulation) */}
+        <div className="relative hidden md:block" ref={roleRef}>
+          <button
+            onClick={() => setIsRoleSwitcherOpen(!isRoleSwitcherOpen)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-800 transition-colors"
+            title="Switch Active Emulated Role (Super Admin, Admin, Moderator)"
+          >
+            <Shield className="w-3.5 h-3.5 text-chel-600" />
+            <span className="capitalize">
+              {user?.role === 'super_admin'
+                ? 'Super Admin'
+                : user?.role === 'admin'
+                ? 'Admin'
+                : 'Moderator'}
+            </span>
+            <ChevronDown className="w-3 h-3 text-slate-400" />
+          </button>
+
+          {isRoleSwitcherOpen && (
+            <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-200 p-3 z-50 animate-fade-in text-xs space-y-2">
+              <div className="font-bold text-slate-900 border-b border-slate-100 pb-2">
+                Active Role Preview (Phase 1)
+              </div>
+
+              <div className="space-y-1">
+                <button
+                  onClick={() => {
+                    switchRole('super_admin');
+                    setIsRoleSwitcherOpen(false);
+                  }}
+                  className={`w-full text-left p-2 rounded-xl transition-colors flex items-center justify-between ${
+                    isSuperAdmin ? 'bg-slate-900 text-white font-bold' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="font-bold">1. Super Admin</div>
+                    <div className="text-[10px] opacity-75">All modules & role capacity management</div>
+                  </div>
+                  {isSuperAdmin && <CheckCircle className="w-4 h-4 text-amber-300" />}
+                </button>
+
+                <button
+                  onClick={() => {
+                    switchRole('admin');
+                    setIsRoleSwitcherOpen(false);
+                  }}
+                  className={`w-full text-left p-2 rounded-xl transition-colors flex items-center justify-between ${
+                    isAdmin && !isSuperAdmin ? 'bg-chel-600 text-white font-bold' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="font-bold">2. Administrator</div>
+                    <div className="text-[10px] opacity-75">Operations, content approvals, AI library</div>
+                  </div>
+                  {isAdmin && !isSuperAdmin && <CheckCircle className="w-4 h-4 text-white" />}
+                </button>
+
+                <button
+                  onClick={() => {
+                    switchRole('moderator');
+                    setIsRoleSwitcherOpen(false);
+                  }}
+                  className={`w-full text-left p-2 rounded-xl transition-colors flex items-center justify-between ${
+                    isModerator ? 'bg-purple-600 text-white font-bold' : 'hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <div>
+                    <div className="font-bold">3. Moderator</div>
+                    <div className="text-[10px] opacity-75">Permission-gated operational tools</div>
+                  </div>
+                  {isModerator && <CheckCircle className="w-4 h-4 text-white" />}
+                </button>
+              </div>
+
+              {isModerator && (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">
+                    Moderator Permissions:
+                  </div>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasPermission('forum_moderation')}
+                        onChange={() => toggleModeratorPermission('forum_moderation')}
+                        className="rounded text-purple-600"
+                      />
+                      <span className="text-[11px] font-medium text-slate-700">Forum Moderation</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasPermission('proof_review')}
+                        onChange={() => toggleModeratorPermission('proof_review')}
+                        className="rounded text-purple-600"
+                      />
+                      <span className="text-[11px] font-medium text-slate-700">Proof Review</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasPermission('content_drafting')}
+                        onChange={() => toggleModeratorPermission('content_drafting')}
+                        className="rounded text-purple-600"
+                      />
+                      <span className="text-[11px] font-medium text-slate-700">Content Drafting</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Global Search Trigger */}
         <button
           onClick={onOpenGlobalSearch}

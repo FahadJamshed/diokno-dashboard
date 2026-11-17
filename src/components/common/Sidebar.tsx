@@ -1,31 +1,36 @@
 import React from 'react';
 import {
   LayoutGrid,
+  Users,
   Megaphone,
   Calendar,
   Star,
   MessageSquare,
-  Users,
+  ShieldAlert,
   Bell,
+  Bot,
+  BarChart2,
   ClipboardList,
   Settings,
-  BarChart2,
   Menu
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { ModeratorPermission } from '../../types';
 
 export type NavModule =
   | 'dashboard'
+  | 'users'
   | 'announcements'
   | 'events'
   | 'challenges'
   | 'community'
-  | 'users'
+  | 'moderation'
   | 'notifications'
+  | 'chat'
+  | 'reports'
   | 'audit'
-  | 'settings'
-  | 'reports';
+  | 'settings';
 
 interface SidebarProps {
   currentModule: NavModule;
@@ -44,38 +49,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onCloseMobile
 }) => {
-  const { isModerator } = useAuth();
-  const { communityReports } = useData();
+  const { isSuperAdmin, isAdmin, isModerator, hasPermission } = useAuth();
+  const { communityReports, challengeProofs, chatDocuments } = useData();
 
-  // Pending count for community
   const pendingReportsCount = communityReports.filter((r) => r.status === 'pending').length;
-  const communityBadgeValue = pendingReportsCount > 0 ? pendingReportsCount : 23;
+  const pendingProofsCount = challengeProofs.filter((p) => p.status === 'pending_review').length;
+  const pendingDocsCount = chatDocuments.filter((d) => d.approvalStatus === 'pending_approval').length;
 
   const navItems: {
     id: NavModule;
     label: string;
     icon: React.ElementType;
     adminOnly?: boolean;
+    requiredPermission?: ModeratorPermission;
     badge?: number;
   }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
-    { id: 'announcements', label: 'Announcements', icon: Megaphone },
-    { id: 'events', label: 'Events', icon: Calendar },
-    { id: 'challenges', label: 'CHELlenges', icon: Star },
-    { id: 'community', label: 'Community', icon: MessageSquare, badge: communityBadgeValue },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'notifications', label: 'Notifications', icon: Bell, adminOnly: true },
-    { id: 'audit', label: 'Audit Log', icon: ClipboardList },
-    { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
-    { id: 'reports', label: 'Reports', icon: BarChart2 }
+    { id: 'users', label: 'Users & Members', icon: Users, adminOnly: true },
+    {
+      id: 'announcements',
+      label: 'Announcements',
+      icon: Megaphone,
+      requiredPermission: 'content_drafting'
+    },
+    {
+      id: 'events',
+      label: 'Events',
+      icon: Calendar,
+      requiredPermission: 'content_drafting'
+    },
+    {
+      id: 'challenges',
+      label: 'CHELlenges',
+      icon: Star,
+      requiredPermission: 'proof_review',
+      badge: pendingProofsCount > 0 ? pendingProofsCount : undefined
+    },
+    { id: 'community', label: 'Community & Forum', icon: MessageSquare },
+    {
+      id: 'moderation',
+      label: 'Moderation & Reports',
+      icon: ShieldAlert,
+      requiredPermission: 'forum_moderation',
+      badge: pendingReportsCount > 0 ? pendingReportsCount : undefined
+    },
+    { id: 'notifications', label: 'Push Notifications', icon: Bell, adminOnly: true },
+    {
+      id: 'chat',
+      label: 'Chat with Chel',
+      icon: Bot,
+      adminOnly: true,
+      badge: pendingDocsCount > 0 ? pendingDocsCount : undefined
+    },
+    { id: 'reports', label: 'Reports & Analytics', icon: BarChart2, adminOnly: true },
+    { id: 'audit', label: 'Audit Log', icon: ClipboardList, adminOnly: true },
+    { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true }
   ];
 
-  // Filter items for moderators
+  // Filter items for moderators based on their granular permissions
   const filteredNavItems = navItems.filter((item) => {
-    if (isModerator && item.adminOnly) {
-      return false;
+    if (isSuperAdmin || isAdmin) return true;
+    if (isModerator) {
+      if (item.adminOnly) return false;
+      if (item.requiredPermission) {
+        return hasPermission(item.requiredPermission);
+      }
+      return true;
     }
-    return true;
+    return false;
   });
 
   return (

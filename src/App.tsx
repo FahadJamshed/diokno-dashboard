@@ -20,6 +20,8 @@ import { NotificationsList } from './components/modules/notifications/Notificati
 import { AuditLogViewer } from './components/modules/audit/AuditLogViewer';
 import { SettingsView } from './components/modules/settings/SettingsView';
 import { ReportsView } from './components/modules/reports/ReportsView';
+import { ChatWithChelView } from './components/modules/chat/ChatWithChelView';
+import { ModerationReportsView } from './components/modules/community/ModerationReportsView';
 
 export const AppContent: React.FC = () => {
   const { user, authScreen, isAdmin } = useAuth();
@@ -55,6 +57,10 @@ export const AppContent: React.FC = () => {
         return <ChallengesList />;
       case 'community':
         return <CommunityManagement />;
+      case 'moderation':
+        return <ModerationReportsView />;
+      case 'chat':
+        return <ChatWithChelView />;
       case 'users':
         return <UsersList />;
       case 'notifications':

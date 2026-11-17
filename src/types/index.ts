@@ -1,8 +1,10 @@
 // Diokno Volunteer App - Domain Types
 
-export type UserRole = 'admin' | 'moderator' | 'volunteer';
+export type UserRole = 'super_admin' | 'admin' | 'moderator' | 'volunteer' | 'member' | 'guest';
 
 export type UserStatus = 'active' | 'muted' | 'suspended' | 'deletion_requested';
+
+export type ModeratorPermission = 'forum_moderation' | 'proof_review' | 'content_drafting';
 
 export interface UserSanction {
   type: 'warning' | 'mute_24h' | 'mute_7d' | 'ban';
@@ -31,6 +33,11 @@ export interface User {
   eventAttendanceCount: number;
   badgesEarned: string[];
   communityPostCount: number;
+  points: number;
+  moderatorPermissions?: ModeratorPermission[];
+  age?: number;
+  gender?: 'male' | 'female' | 'non_binary' | 'prefer_not_to_say';
+  demographicsConsent?: boolean;
   moderatorApplicationStatus?: 'pending' | 'approved' | 'rejected';
   deletionRequestedAt?: string;
   sanctions: UserSanction[];
@@ -98,10 +105,11 @@ export interface EventAttendee {
   userProvince: string;
   userRole: UserRole;
   rsvpDate: string;
-  checkedIn: boolean;
+  status: 'going' | 'cancelled';
+  checkedIn?: boolean;
   checkedInAt?: string;
-  qrCodeId: string;
-  waitlisted: boolean;
+  qrCodeId?: string;
+  waitlisted?: boolean;
 }
 
 export interface ChallengeTask {
@@ -228,7 +236,7 @@ export interface AuditLog {
   id: string;
   adminId: string;
   adminName: string;
-  adminRole: 'admin' | 'moderator';
+  adminRole: 'super_admin' | 'admin' | 'moderator';
   action: string;
   category: 'announcements' | 'events' | 'challenges' | 'community' | 'users' | 'notifications' | 'settings' | 'auth';
   affectedRecordId: string;
@@ -260,8 +268,144 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'moderator';
+  role: 'super_admin' | 'admin' | 'moderator';
   avatar: string;
   twoFactorEnabled: boolean;
+  moderatorPermissions?: ModeratorPermission[];
+}
+
+
+// Chat with Chel Types
+export type DocumentApprovalStatus = 'pending_approval' | 'approved' | 'rejected';
+export type DocumentIndexingStatus = 'pending_approval' | 'ready_for_indexing' | 'indexing' | 'indexed' | 'indexing_failed' | 'reindex_required';
+export type DocumentFileType = 'pdf' | 'docx' | 'transcript' | 'webpage';
+
+export interface ChatDocument {
+  id: string;
+  title: string;
+  description: string;
+  fileType: DocumentFileType;
+  fileName: string;
+  fileSize: number; // in bytes
+  source: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  approvalStatus: DocumentApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  indexingStatus: DocumentIndexingStatus;
+  indexedAt?: string;
+  chunkCount?: number;
+  lastUpdated: string;
+}
+
+export type ConversationFlagReason = 'inappropriate_question' | 'incorrect_response' | 'low_confidence' | 'user_report' | 'sensitive_topic';
+export type ConversationReviewStatus = 'new' | 'under_review' | 'resolved' | 'dismissed';
+
+export interface ChatConversation {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  messages: ChatMessage[];
+  feedback?: 'positive' | 'negative';
+  feedbackComment?: string;
+  flagReason?: ConversationFlagReason;
+  reviewStatus?: ConversationReviewStatus;
+  reviewNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  citations?: ChatCitation[];
+  confidence?: 'high' | 'medium' | 'low';
+  timestamp: string;
+}
+
+export interface ChatCitation {
+  documentId: string;
+  documentTitle: string;
+  excerpt: string;
+  pageNumber?: number;
+}
+
+export interface DeclinedTopic {
+  id: string;
+  category: 'legal_advice' | 'pending_cases' | 'endorsements' | 'election_predictions' | 'private_individuals' | 'personal_data' | 'abusive_prompts' | 'jailbreak_attempts';
+  title: string;
+  description: string;
+  samplePrompt: string;
+  declineResponse: string;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIConfiguration {
+  assistantName: string;
+  description: string;
+  defaultResponseStyle: 'formal' | 'conversational' | 'concise';
+  useThirdPerson: boolean;
+  supportFilipino: boolean;
+  showCitations: boolean;
+  dailyQuestionLimit: number;
+  systemPrompt: string;
+  aiDisclosure: string;
+  lastUpdated: string;
+  updatedBy: string;
+}
+
+// Roles & Access
+export interface RoleDefinition {
+  role: 'super_admin' | 'admin' | 'moderator';
+  label: string;
+  description: string;
+  maxCount: number;
+  currentCount: number;
+  permissions: string[];
+}
+
+// Pilot Access & Evaluation for Chat with Chel
+export interface PilotAccessSettings {
+  adminAccess: boolean;
+  moderatorAccess: boolean;
+  memberGeneralRelease: boolean;
+  pilotAllowlist: {
+    id: string;
+    name: string;
+    email: string;
+    addedAt: string;
+    role: string;
+  }[];
+}
+
+export interface EvaluationMetric {
+  id: string;
+  category: 'in_scope' | 'out_of_scope' | 'adversarial';
+  question: string;
+  expectedBehavior: string;
+  lastTestedAt: string;
+  status: 'passed' | 'failed' | 'needs_review';
+  confidenceScore: number;
+  responseSnippet: string;
+}
+
+export interface EvaluationSummary {
+  totalQuestions: number;
+  inScopeCount: number;
+  outOfScopeCount: number;
+  adversarialCount: number;
+  passRate: number;
+  lastRunDate: string;
+  status: 'ready' | 'in_progress' | 'requires_action';
+  signOffStatus: 'pending' | 'signed_off';
+  signedOffBy?: string;
+  signedOffAt?: string;
 }
 

@@ -12,7 +12,16 @@ import {
   NotificationItem,
   AuditLog,
   AppSettings,
-  UserRole
+  UserRole,
+  ChatDocument,
+  ChatConversation,
+  DeclinedTopic,
+  AIConfiguration,
+  RoleDefinition,
+  PilotAccessSettings,
+  EvaluationMetric,
+  EvaluationSummary,
+  ModeratorPermission
 } from '../types';
 import {
   INITIAL_USERS,
@@ -26,7 +35,15 @@ import {
   INITIAL_KEYWORD_BLOCKLIST,
   INITIAL_NOTIFICATIONS,
   INITIAL_AUDIT_LOGS,
-  INITIAL_APP_SETTINGS
+  INITIAL_APP_SETTINGS,
+  INITIAL_CHAT_DOCUMENTS,
+  INITIAL_CHAT_CONVERSATIONS,
+  INITIAL_DECLINED_TOPICS,
+  INITIAL_AI_CONFIG,
+  INITIAL_ROLE_DEFINITIONS,
+  INITIAL_PILOT_ACCESS,
+  INITIAL_EVALUATION_METRICS,
+  INITIAL_EVALUATION_SUMMARY
 } from '../data/mockData';
 import { useAuth } from './AuthContext';
 import { useToast } from './ToastContext';
@@ -41,14 +58,14 @@ interface DataContextType {
   publishAnnouncement: (id: string) => void;
   unpublishAnnouncement: (id: string) => void;
 
-  // Events
+  // Events (Phase 1)
   events: Event[];
   eventAttendees: EventAttendee[];
   createEvent: (event: Omit<Event, 'id' | 'createdAt' | 'rsvpCount' | 'attendanceCount'>) => { success: boolean; error?: string };
   updateEvent: (id: string, updates: Partial<Event>) => { success: boolean; error?: string };
   cancelEvent: (id: string, reason: string) => void;
-  checkInAttendee: (attendeeId: string) => void;
   addEventAttendee: (eventId: string, userName: string, userEmail: string, userPhone: string, userProvince: string) => void;
+  cancelRSVP: (attendeeId: string) => void;
 
   // Challenges
   challenges: Challenge[];
@@ -74,13 +91,47 @@ interface DataContextType {
   addKeyword: (word: string, language: 'en' | 'fil') => { success: boolean; error?: string };
   removeKeyword: (id: string) => void;
 
-  // Users
+  // Users & Roles
   users: User[];
+  roleDefinitions: RoleDefinition[];
+  createUser: (userData: Partial<User>) => { success: boolean; error?: string };
   updateUserRole: (userId: string, newRole: UserRole) => { success: boolean; error?: string };
+  updateModeratorPermissions: (userId: string, permissions: ModeratorPermission[]) => { success: boolean; error?: string };
   approveModeratorApplication: (userId: string) => void;
   rejectModeratorApplication: (userId: string) => void;
   processAccountDeletion: (userId: string) => void;
   liftSanction: (userId: string) => void;
+
+  // Chat with Chel & Document Library
+  chatDocuments: ChatDocument[];
+  uploadChatDocument: (doc: Omit<ChatDocument, 'id' | 'uploadedAt' | 'approvalStatus' | 'indexingStatus' | 'lastUpdated'>) => { success: boolean; error?: string };
+  approveChatDocument: (id: string) => void;
+  rejectChatDocument: (id: string, reason: string) => { success: boolean; error?: string };
+  startChatDocumentIndexing: (id: string) => void;
+  reindexChatDocument: (id: string) => void;
+  removeChatDocument: (id: string) => void;
+
+  chatConversations: ChatConversation[];
+  updateChatConversationReview: (id: string, status: 'under_review' | 'resolved' | 'dismissed', notes?: string) => void;
+
+  declinedTopics: DeclinedTopic[];
+  addDeclinedTopic: (topic: Omit<DeclinedTopic, 'id' | 'createdAt' | 'updatedAt'>) => { success: boolean; error?: string };
+  updateDeclinedTopic: (id: string, updates: Partial<DeclinedTopic>) => void;
+  removeDeclinedTopic: (id: string) => void;
+  toggleDeclinedTopicStatus: (id: string) => void;
+
+  aiConfig: AIConfiguration;
+  updateAIConfig: (updates: Partial<AIConfiguration>) => void;
+
+  pilotAccess: PilotAccessSettings;
+  updatePilotAccess: (updates: Partial<PilotAccessSettings>) => void;
+  addPilotUser: (name: string, email: string, role: string) => { success: boolean; error?: string };
+  removePilotUser: (id: string) => void;
+
+  evaluationSummary: EvaluationSummary;
+  evaluationMetrics: EvaluationMetric[];
+  runEvaluationSuite: () => void;
+  signOffEvaluation: () => void;
 
   // Notifications
   notifications: NotificationItem[];
@@ -159,6 +210,30 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [settings, setSettings] = useState<AppSettings>(() =>
     loadFromStorage('settings', INITIAL_APP_SETTINGS)
   );
+  const [roleDefinitions, setRoleDefinitions] = useState<RoleDefinition[]>(() =>
+    loadFromStorage('role_definitions', INITIAL_ROLE_DEFINITIONS)
+  );
+  const [chatDocuments, setChatDocuments] = useState<ChatDocument[]>(() =>
+    loadFromStorage('chat_documents', INITIAL_CHAT_DOCUMENTS)
+  );
+  const [chatConversations, setChatConversations] = useState<ChatConversation[]>(() =>
+    loadFromStorage('chat_conversations', INITIAL_CHAT_CONVERSATIONS)
+  );
+  const [declinedTopics, setDeclinedTopics] = useState<DeclinedTopic[]>(() =>
+    loadFromStorage('declined_topics', INITIAL_DECLINED_TOPICS)
+  );
+  const [aiConfig, setAiConfig] = useState<AIConfiguration>(() =>
+    loadFromStorage('ai_config', INITIAL_AI_CONFIG)
+  );
+  const [pilotAccess, setPilotAccess] = useState<PilotAccessSettings>(() =>
+    loadFromStorage('pilot_access', INITIAL_PILOT_ACCESS)
+  );
+  const [evaluationSummary, setEvaluationSummary] = useState<EvaluationSummary>(() =>
+    loadFromStorage('evaluation_summary', INITIAL_EVALUATION_SUMMARY)
+  );
+  const [evaluationMetrics, setEvaluationMetrics] = useState<EvaluationMetric[]>(() =>
+    loadFromStorage('evaluation_metrics', INITIAL_EVALUATION_METRICS)
+  );
 
   // Sync to local storage
   useEffect(() => saveToStorage('announcements', announcements), [announcements]);
@@ -173,6 +248,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => saveToStorage('notifications', notifications), [notifications]);
   useEffect(() => saveToStorage('audit_logs', auditLogs), [auditLogs]);
   useEffect(() => saveToStorage('settings', settings), [settings]);
+  useEffect(() => saveToStorage('role_definitions', roleDefinitions), [roleDefinitions]);
+  useEffect(() => saveToStorage('chat_documents', chatDocuments), [chatDocuments]);
+  useEffect(() => saveToStorage('chat_conversations', chatConversations), [chatConversations]);
+  useEffect(() => saveToStorage('declined_topics', declinedTopics), [declinedTopics]);
+  useEffect(() => saveToStorage('ai_config', aiConfig), [aiConfig]);
+  useEffect(() => saveToStorage('pilot_access', pilotAccess), [pilotAccess]);
+  useEffect(() => saveToStorage('evaluation_summary', evaluationSummary), [evaluationSummary]);
+  useEffect(() => saveToStorage('evaluation_metrics', evaluationMetrics), [evaluationMetrics]);
 
   // Audit Logger Helper
   const logAuditAction = useCallback((
@@ -490,7 +573,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const event = events.find((e) => e.id === eventId);
     if (!event) return;
 
-    const isWaitlist = event.rsvpCount >= event.capacity;
     const newAttendee: EventAttendee = {
       id: 'att-' + Math.random().toString(36).substring(2, 9),
       eventId,
@@ -499,24 +581,34 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       userEmail,
       userPhone,
       userProvince,
-      userRole: 'volunteer',
+      userRole: 'member',
       rsvpDate: new Date().toISOString(),
-      checkedIn: false,
-      qrCodeId: `QR-${eventId.substring(0, 4).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      waitlisted: isWaitlist
+      status: 'going'
     };
 
     setEventAttendees((prev) => [newAttendee, ...prev]);
-    if (!isWaitlist) {
-      setEvents((prev) =>
-        prev.map((e) => (e.id === eventId ? { ...e, rsvpCount: e.rsvpCount + 1 } : e))
-      );
-    }
-
-    showSuccess(
-      isWaitlist ? 'Added to Waitlist' : 'RSVP Registered',
-      `${userName} registered for ${event.title}`
+    setEvents((prev) =>
+      prev.map((e) => (e.id === eventId ? { ...e, rsvpCount: e.rsvpCount + 1 } : e))
     );
+
+    showSuccess('RSVP Confirmed', `${userName} is confirmed for ${event.title}`);
+  };
+
+  const cancelRSVP = (attendeeId: string) => {
+    const attendee = eventAttendees.find((a) => a.id === attendeeId);
+    if (!attendee) return;
+
+    setEventAttendees((prev) =>
+      prev.map((a) => (a.id === attendeeId ? { ...a, status: 'cancelled' } : a))
+    );
+
+    setEvents((prev) =>
+      prev.map((e) =>
+        e.id === attendee.eventId ? { ...e, rsvpCount: Math.max(0, e.rsvpCount - 1) } : e
+      )
+    );
+
+    showWarning('RSVP Cancelled', `${attendee.userName}'s reservation was marked as cancelled.`);
   };
 
   // --- CHELlenges Actions ---
@@ -903,9 +995,94 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Users Actions ---
+  const createUser = (userData: Partial<User>) => {
+    if (!userData.name?.trim() || !userData.email?.trim()) {
+      showError('Validation Error', 'Volunteer name and email are required.');
+      return { success: false, error: 'Name and email are required.' };
+    }
+
+    if (userData.role === 'super_admin' && user?.role !== 'super_admin') {
+      showError('Unauthorized Action', 'Only an active Super Admin can create Super Admin accounts.');
+      return { success: false, error: 'Only Super Admin can create Super Admin accounts' };
+    }
+
+    // Role capacity checks (ADM-01 / ADM-07)
+    if (userData.role === 'super_admin') {
+      const count = users.filter((u) => u.role === 'super_admin').length;
+      if (count >= 3) {
+        showError('Capacity Reached', 'Maximum limit of 3 Super Admins has been reached.');
+        return { success: false, error: 'Super Admin limit reached (max 3)' };
+      }
+    } else if (userData.role === 'admin') {
+      const count = users.filter((u) => u.role === 'admin').length;
+      if (count >= 12) {
+        showError('Capacity Reached', 'Maximum limit of 12 Administrators has been reached.');
+        return { success: false, error: 'Administrator limit reached (max 12)' };
+      }
+    } else if (userData.role === 'moderator') {
+      const count = users.filter((u) => u.role === 'moderator').length;
+      if (count >= 150) {
+        showError('Capacity Reached', 'Maximum limit of 150 Moderators has been reached.');
+        return { success: false, error: 'Moderator limit reached (max 150)' };
+      }
+    }
+
+    const newUser: User = {
+      id: `usr-${Date.now().toString(36)}`,
+      name: userData.name.trim(),
+      email: userData.email.trim().toLowerCase(),
+      avatar:
+        userData.avatar ||
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      phone: userData.phone || '+63 917 000 0000',
+      isPhoneVerified: userData.isPhoneVerified ?? true,
+      province: userData.province || 'Metro Manila',
+      city: userData.city || 'Quezon City',
+      organization: userData.organization || 'Independent Volunteer',
+      interests: userData.interests || ['Legal Reform', 'Community Organizing'],
+      registeredAt: new Date().toISOString(),
+      role: userData.role || 'volunteer',
+      status: 'active',
+      profileCompletion: 100,
+      eventAttendanceCount: 0,
+      badgesEarned: [],
+      communityPostCount: 0,
+      points: userData.points || 0,
+      age: userData.age,
+      gender: userData.gender,
+      demographicsConsent: userData.demographicsConsent ?? true,
+      moderatorPermissions:
+        userData.role === 'moderator'
+          ? userData.moderatorPermissions || ['forum_moderation']
+          : undefined,
+      sanctions: []
+    };
+
+    setUsers((prev) => [newUser, ...prev]);
+
+    logAuditAction(
+      'Registered New User',
+      'users',
+      newUser.id,
+      'User',
+      newUser.name,
+      'None',
+      `Registered with role ${newUser.role.toUpperCase()}`
+    );
+
+    showSuccess('Volunteer Added', `${newUser.name} was successfully registered.`);
+    return { success: true };
+  };
+
   const updateUserRole = (userId: string, newRole: UserRole) => {
     const target = users.find((u) => u.id === userId);
     if (!target) return { success: false, error: 'User not found.' };
+
+    // Super Admin privilege enforcement (ADM-01 / ADM-07: Admins cannot assign Super Admin)
+    if (newRole === 'super_admin' && user?.role !== 'super_admin') {
+      showError('Unauthorized Action', 'Only an active Super Admin can assign or promote Super Admin privileges.');
+      return { success: false, error: 'Only Super Admin can assign Super Admin role' };
+    }
 
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
@@ -922,6 +1099,28 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     );
 
     showSuccess('Role Updated', `${target.name} is now assigned as ${newRole.toUpperCase()}.`);
+    return { success: true };
+  };
+
+  const updateModeratorPermissions = (userId: string, permissions: ModeratorPermission[]) => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, error: 'User not found.' };
+
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, moderatorPermissions: permissions } : u))
+    );
+
+    logAuditAction(
+      'Updated Moderator Permissions',
+      'users',
+      userId,
+      'User',
+      target.name,
+      `Permissions: ${(target.moderatorPermissions || []).join(', ') || 'None'}`,
+      `Permissions: ${permissions.join(', ') || 'None'}`
+    );
+
+    showSuccess('Permissions Updated', `Permissions updated for ${target.name}.`);
     return { success: true };
   };
 
@@ -1077,6 +1276,378 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { success: true, quietHourWarning: isQuietHour };
   };
 
+  // --- Chat with Chel Actions ---
+  const uploadChatDocument = (
+    doc: Omit<ChatDocument, 'id' | 'uploadedAt' | 'approvalStatus' | 'indexingStatus' | 'lastUpdated'>
+  ) => {
+    const newId = 'doc-' + Math.random().toString(36).substring(2, 9);
+    const newDoc: ChatDocument = {
+      ...doc,
+      id: newId,
+      uploadedAt: new Date().toISOString(),
+      approvalStatus: 'pending_approval',
+      indexingStatus: 'pending_approval',
+      lastUpdated: new Date().toISOString()
+    };
+
+    setChatDocuments((prev) => [newDoc, ...prev]);
+
+    logAuditAction(
+      'Uploaded Knowledge Document',
+      'settings',
+      newId,
+      'ChatDocument',
+      newDoc.title,
+      'None (New)',
+      `Type: ${newDoc.fileType}, Source: ${newDoc.source}, Status: pending_approval`
+    );
+
+    showSuccess('Document Uploaded', `"${newDoc.title}" submitted for administrative approval.`);
+    return { success: true };
+  };
+
+  const approveChatDocument = (id: string) => {
+    const doc = chatDocuments.find((d) => d.id === id);
+    if (!doc) return;
+
+    setChatDocuments((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              approvalStatus: 'approved',
+              approvedBy: user?.name || 'Administrator',
+              approvedAt: new Date().toISOString(),
+              indexingStatus: 'ready_for_indexing',
+              lastUpdated: new Date().toISOString()
+            }
+          : d
+      )
+    );
+
+    logAuditAction(
+      'Approved Knowledge Document',
+      'settings',
+      id,
+      'ChatDocument',
+      doc.title,
+      'approvalStatus: pending_approval',
+      'approvalStatus: approved, indexingStatus: ready_for_indexing'
+    );
+
+    showSuccess('Document Approved', `"${doc.title}" is approved and eligible for indexing.`);
+  };
+
+  const rejectChatDocument = (id: string, reason: string) => {
+    if (!reason.trim()) {
+      showError('Rejection Reason Required', 'Please provide a reason for rejecting this document.');
+      return { success: false, error: 'Reason required' };
+    }
+
+    const doc = chatDocuments.find((d) => d.id === id);
+    if (!doc) return { success: false, error: 'Document not found' };
+
+    setChatDocuments((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              approvalStatus: 'rejected',
+              rejectionReason: reason,
+              indexingStatus: 'indexing_failed',
+              lastUpdated: new Date().toISOString()
+            }
+          : d
+      )
+    );
+
+    logAuditAction(
+      'Rejected Knowledge Document',
+      'settings',
+      id,
+      'ChatDocument',
+      doc.title,
+      'approvalStatus: pending_approval',
+      `approvalStatus: rejected (Reason: ${reason})`
+    );
+
+    showWarning('Document Rejected', `"${doc.title}" was rejected with reason recorded.`);
+    return { success: true };
+  };
+
+  const startChatDocumentIndexing = (id: string) => {
+    const doc = chatDocuments.find((d) => d.id === id);
+    if (!doc) return;
+
+    if (doc.approvalStatus !== 'approved') {
+      showError('Approval Required', 'Only approved documents are eligible for vector indexing.');
+      return;
+    }
+
+    // Mark as indexing
+    setChatDocuments((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? { ...d, indexingStatus: 'indexing', lastUpdated: new Date().toISOString() }
+          : d
+      )
+    );
+
+    // Simulate completion
+    setTimeout(() => {
+      setChatDocuments((prev) =>
+        prev.map((d) =>
+          d.id === id
+            ? {
+                ...d,
+                indexingStatus: 'indexed',
+                indexedAt: new Date().toISOString(),
+                chunkCount: Math.floor(Math.random() * 30) + 12,
+                lastUpdated: new Date().toISOString()
+              }
+            : d
+        )
+      );
+      showSuccess('Indexing Completed', `Embeddings generated for "${doc.title}".`);
+    }, 1500);
+
+    logAuditAction(
+      'Triggered Document Indexing',
+      'settings',
+      id,
+      'ChatDocument',
+      doc.title,
+      `indexingStatus: ${doc.indexingStatus}`,
+      'indexingStatus: indexed'
+    );
+  };
+
+  const reindexChatDocument = (id: string) => {
+    startChatDocumentIndexing(id);
+  };
+
+  const removeChatDocument = (id: string) => {
+    const doc = chatDocuments.find((d) => d.id === id);
+    if (!doc) return;
+
+    setChatDocuments((prev) => prev.filter((d) => d.id !== id));
+
+    logAuditAction(
+      'Removed Knowledge Document',
+      'settings',
+      id,
+      'ChatDocument',
+      doc.title,
+      `Status: ${doc.approvalStatus}`,
+      'DELETED'
+    );
+
+    showSuccess('Document Removed', `"${doc.title}" removed from knowledge library.`);
+  };
+
+  const updateChatConversationReview = (
+    id: string,
+    status: 'under_review' | 'resolved' | 'dismissed',
+    notes?: string
+  ) => {
+    const conv = chatConversations.find((c) => c.id === id);
+    if (!conv) return;
+
+    setChatConversations((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              reviewStatus: status,
+              reviewNotes: notes || c.reviewNotes,
+              reviewedBy: user?.name || 'Admin',
+              reviewedAt: new Date().toISOString()
+            }
+          : c
+      )
+    );
+
+    logAuditAction(
+      `Reviewed Flagged AI Response (${status})`,
+      'settings',
+      id,
+      'ChatConversation',
+      `Conversation with ${conv.userName}`,
+      `reviewStatus: ${conv.reviewStatus || 'new'}`,
+      `reviewStatus: ${status}, Notes: ${notes || 'None'}`
+    );
+
+    showSuccess('Review Status Updated', `Conversation marked as ${status.replace('_', ' ').toUpperCase()}.`);
+  };
+
+  const addDeclinedTopic = (topic: Omit<DeclinedTopic, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newId = 'dec-' + Math.random().toString(36).substring(2, 9);
+    const newTopic: DeclinedTopic = {
+      ...topic,
+      id: newId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setDeclinedTopics((prev) => [newTopic, ...prev]);
+
+    logAuditAction(
+      'Added Declined Topic Guardrail',
+      'settings',
+      newId,
+      'DeclinedTopic',
+      newTopic.title,
+      'None',
+      `Category: ${newTopic.category}`
+    );
+
+    showSuccess('Declined Topic Added', `"${newTopic.title}" added to safety guardrails.`);
+    return { success: true };
+  };
+
+  const updateDeclinedTopic = (id: string, updates: Partial<DeclinedTopic>) => {
+    setDeclinedTopics((prev) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
+      )
+    );
+    showSuccess('Topic Guardrail Updated', 'Changes saved successfully.');
+  };
+
+  const removeDeclinedTopic = (id: string) => {
+    const target = declinedTopics.find((t) => t.id === id);
+    if (!target) return;
+
+    setDeclinedTopics((prev) => prev.filter((t) => t.id !== id));
+
+    logAuditAction(
+      'Removed Declined Topic Guardrail',
+      'settings',
+      id,
+      'DeclinedTopic',
+      target.title,
+      `Category: ${target.category}`,
+      'REMOVED'
+    );
+
+    showSuccess('Guardrail Removed', `"${target.title}" removed.`);
+  };
+
+  const toggleDeclinedTopicStatus = (id: string) => {
+    const target = declinedTopics.find((t) => t.id === id);
+    if (!target) return;
+
+    const newStatus = target.status === 'active' ? 'inactive' : 'active';
+    setDeclinedTopics((prev) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t
+      )
+    );
+    showSuccess(`Topic ${newStatus === 'active' ? 'Activated' : 'Deactivated'}`, target.title);
+  };
+
+  const updateAIConfig = (updates: Partial<AIConfiguration>) => {
+    setAiConfig((prev) => ({
+      ...prev,
+      ...updates,
+      lastUpdated: new Date().toISOString(),
+      updatedBy: user?.name || 'Administrator'
+    }));
+
+    logAuditAction(
+      'Updated AI Assistant Configuration',
+      'settings',
+      'ai_config',
+      'AIConfiguration',
+      'Assistant Settings',
+      'Previous AI Config',
+      JSON.stringify(updates).substring(0, 80)
+    );
+
+    showSuccess('AI Configuration Saved', 'System prompt and parameters updated.');
+  };
+
+  const updatePilotAccess = (updates: Partial<PilotAccessSettings>) => {
+    setPilotAccess((prev) => ({ ...prev, ...updates }));
+
+    logAuditAction(
+      'Updated Pilot Access Settings',
+      'settings',
+      'pilot_access',
+      'PilotAccessSettings',
+      'Access Management',
+      'Previous Pilot Config',
+      `General Release: ${updates.memberGeneralRelease !== undefined ? updates.memberGeneralRelease : pilotAccess.memberGeneralRelease}`
+    );
+
+    showSuccess('Pilot Access Updated', 'Access gates and release status updated.');
+  };
+
+  const addPilotUser = (name: string, email: string, role: string) => {
+    if (!email || !email.includes('@')) {
+      showError('Invalid Email', 'Please enter a valid email address.');
+      return { success: false, error: 'Invalid email' };
+    }
+
+    const newUser = {
+      id: 'plt-' + Math.random().toString(36).substring(2, 9),
+      name: name.trim() || email.split('@')[0],
+      email: email.trim().toLowerCase(),
+      role: role.trim() || 'Pilot Tester',
+      addedAt: new Date().toISOString()
+    };
+
+    setPilotAccess((prev) => ({
+      ...prev,
+      pilotAllowlist: [newUser, ...prev.pilotAllowlist]
+    }));
+
+    showSuccess('Pilot Tester Added', `${newUser.name} added to pilot allowlist.`);
+    return { success: true };
+  };
+
+  const removePilotUser = (id: string) => {
+    setPilotAccess((prev) => ({
+      ...prev,
+      pilotAllowlist: prev.pilotAllowlist.filter((u) => u.id !== id)
+    }));
+    showSuccess('Pilot Tester Removed', 'User removed from pilot allowlist.');
+  };
+
+  const runEvaluationSuite = () => {
+    showSuccess('Evaluation Suite Running', 'Executing 125 benchmark questions across in-scope, out-of-scope, and adversarial scenarios...');
+    setTimeout(() => {
+      setEvaluationSummary((prev) => ({
+        ...prev,
+        lastRunDate: new Date().toISOString(),
+        passRate: 98.2,
+        status: 'ready'
+      }));
+      showSuccess('Evaluation Complete', 'Pass rate: 98.2% across 125 test prompts. Exceeds launch threshold.');
+    }, 2000);
+  };
+
+  const signOffEvaluation = () => {
+    setEvaluationSummary((prev) => ({
+      ...prev,
+      signOffStatus: 'signed_off',
+      signedOffBy: user?.name || 'Atty. Maria Victoria Santos',
+      signedOffAt: new Date().toISOString()
+    }));
+
+    logAuditAction(
+      'Signed Off AI Evaluation Benchmark',
+      'settings',
+      'eval_signoff',
+      'EvaluationSummary',
+      'Chat with Chel Evaluation',
+      'signOffStatus: pending',
+      `Signed off by ${user?.name || 'Admin'} for release.`
+    );
+
+    showSuccess('Evaluation Signed Off', 'Release evaluation officially certified.');
+  };
+
   // --- Settings Actions ---
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
@@ -1109,7 +1680,15 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setNotifications(INITIAL_NOTIFICATIONS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
     setSettings(INITIAL_APP_SETTINGS);
-    showSuccess('Reset to Initial Demo Data', 'All data records restored.');
+    setRoleDefinitions(INITIAL_ROLE_DEFINITIONS);
+    setChatDocuments(INITIAL_CHAT_DOCUMENTS);
+    setChatConversations(INITIAL_CHAT_CONVERSATIONS);
+    setDeclinedTopics(INITIAL_DECLINED_TOPICS);
+    setAiConfig(INITIAL_AI_CONFIG);
+    setPilotAccess(INITIAL_PILOT_ACCESS);
+    setEvaluationSummary(INITIAL_EVALUATION_SUMMARY);
+    setEvaluationMetrics(INITIAL_EVALUATION_METRICS);
+    showSuccess('Reset to Initial Demo Data', 'All Phase 1 data records restored.');
   };
 
   return (
@@ -1127,8 +1706,8 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         createEvent,
         updateEvent,
         cancelEvent,
-        checkInAttendee,
         addEventAttendee,
+        cancelRSVP,
         challenges,
         challengeProofs,
         createChallenge,
@@ -1148,11 +1727,38 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addKeyword,
         removeKeyword,
         users,
+        roleDefinitions,
+        createUser,
         updateUserRole,
+        updateModeratorPermissions,
         approveModeratorApplication,
         rejectModeratorApplication,
         processAccountDeletion,
         liftSanction,
+        chatDocuments,
+        uploadChatDocument,
+        approveChatDocument,
+        rejectChatDocument,
+        startChatDocumentIndexing,
+        reindexChatDocument,
+        removeChatDocument,
+        chatConversations,
+        updateChatConversationReview,
+        declinedTopics,
+        addDeclinedTopic,
+        updateDeclinedTopic,
+        removeDeclinedTopic,
+        toggleDeclinedTopicStatus,
+        aiConfig,
+        updateAIConfig,
+        pilotAccess,
+        updatePilotAccess,
+        addPilotUser,
+        removePilotUser,
+        evaluationSummary,
+        evaluationMetrics,
+        runEvaluationSuite,
+        signOffEvaluation,
         notifications,
         composeNotification,
         auditLogs,

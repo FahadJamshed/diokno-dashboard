@@ -4,16 +4,14 @@ import {
   Calendar,
   MapPin,
   Users,
-  CheckCircle2,
-  QrCode,
-  Download,
-  AlertTriangle,
   Search,
   UserPlus,
   Clock,
   ExternalLink,
-  ShieldCheck,
-  Camera
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Video
 } from 'lucide-react';
 import { Event, EventAttendee } from '../../../types';
 import { useData } from '../../../context/DataContext';
@@ -34,16 +32,14 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
   event,
   onOpenEdit
 }) => {
-  const { eventAttendees, checkInAttendee, addEventAttendee, cancelEvent } = useData();
-  const { isAdmin, isModerator } = useAuth();
+  const { eventAttendees, addEventAttendee, cancelRSVP, cancelEvent } = useData();
+  const { isAdmin } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'all' | 'checked_in' | 'absent' | 'waitlist'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'going' | 'cancelled'>('all');
   const [attendeeSearch, setAttendeeSearch] = useState('');
-  const [manualQrInput, setManualQrInput] = useState('');
-  const [isQrScannerActive, setIsQrScannerActive] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
 
-  // New Attendee Walk-in form state
+  // New Attendee RSVP form state
   const [isAddAttendeeOpen, setIsAddAttendeeOpen] = useState(false);
   const [newAttendeeName, setNewAttendeeName] = useState('');
   const [newAttendeeEmail, setNewAttendeeEmail] = useState('');
@@ -53,80 +49,23 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
   if (!isOpen || !event) return null;
 
   const attendees = eventAttendees.filter((a) => a.eventId === event.id);
-  const checkedInAttendees = attendees.filter((a) => a.checkedIn);
-  const absentAttendees = attendees.filter((a) => !a.checkedIn && !a.waitlisted);
-  const waitlistedAttendees = attendees.filter((a) => a.waitlisted);
+  const goingAttendees = attendees.filter((a) => (a.status || 'going') === 'going');
+  const cancelledAttendees = attendees.filter((a) => a.status === 'cancelled');
 
   const filteredAttendees = attendees.filter((a) => {
     const matchesSearch =
       a.userName.toLowerCase().includes(attendeeSearch.toLowerCase()) ||
       a.userEmail.toLowerCase().includes(attendeeSearch.toLowerCase()) ||
-      a.qrCodeId.toLowerCase().includes(attendeeSearch.toLowerCase());
+      a.userProvince.toLowerCase().includes(attendeeSearch.toLowerCase());
 
     if (!matchesSearch) return false;
 
-    if (activeTab === 'checked_in') return a.checkedIn;
-    if (activeTab === 'absent') return !a.checkedIn && !a.waitlisted;
-    if (activeTab === 'waitlist') return a.waitlisted;
+    if (activeTab === 'going') return (a.status || 'going') === 'going';
+    if (activeTab === 'cancelled') return a.status === 'cancelled';
     return true;
   });
 
-  const rsvpPercentage = Math.min(100, Math.round((event.rsvpCount / event.capacity) * 100));
-  const attendancePercentage =
-    event.rsvpCount > 0 ? Math.round((checkedInAttendees.length / event.rsvpCount) * 100) : 0;
-
-  // Manual QR or Search Check-in
-  const handleQuickCheckIn = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualQrInput.trim()) return;
-
-    const query = manualQrInput.trim().toLowerCase();
-    const found = attendees.find(
-      (a) => a.qrCodeId.toLowerCase() === query || a.userEmail.toLowerCase() === query
-    );
-
-    if (found) {
-      checkInAttendee(found.id);
-      setManualQrInput('');
-    } else {
-      alert(`No attendee found with QR Code or Email "${manualQrInput}". Check input.`);
-    }
-  };
-
-  const handleSimulateScanCamera = () => {
-    setIsQrScannerActive(true);
-    setTimeout(() => {
-      // Pick first unchecked-in attendee or alert
-      const unchecked = attendees.find((a) => !a.checkedIn);
-      if (unchecked) {
-        checkInAttendee(unchecked.id);
-      }
-      setIsQrScannerActive(false);
-    }, 1200);
-  };
-
-  const handleExportCSV = () => {
-    const headers = 'ID,Name,Email,Phone,Province,RSVP Date,Status,QR Code\n';
-    const rows = attendees
-      .map(
-        (a) =>
-          `"${a.id}","${a.userName}","${a.userEmail}","${a.userPhone}","${a.userProvince}","${a.rsvpDate}","${
-            a.checkedIn ? 'Checked In' : a.waitlisted ? 'Waitlist' : 'Registered'
-          }","${a.qrCodeId}"`
-      )
-      .join('\n');
-
-    const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `attendees-${event.title.replace(/\s+/g, '-').toLowerCase()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleCreateWalkIn = (e: React.FormEvent) => {
+  const handleCreateRSVP = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAttendeeName || !newAttendeeEmail) return;
 
@@ -150,7 +89,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between pb-5 border-b border-slate-100 gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1.5">
               <Badge
                 variant={
                   event.status === 'upcoming'
@@ -168,11 +107,6 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                 {event.eventType}
               </span>
-              {event.isMembersOnly && (
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                  Members Only
-                </span>
-              )}
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
@@ -184,6 +118,10 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
                 <Calendar className="w-3.5 h-3.5 text-chel-600" />
                 {new Date(event.startDateTime).toLocaleString([], {
                   dateStyle: 'medium',
+                  timeStyle: 'short'
+                })}
+                {' - '}
+                {new Date(event.endDateTime).toLocaleTimeString([], {
                   timeStyle: 'short'
                 })}
               </span>
@@ -198,8 +136,19 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
                   rel="noreferrer"
                   className="text-chel-600 hover:underline flex items-center gap-1"
                 >
-                  <span>Google Maps</span>
+                  <span>Map Location</span>
                   <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+              {event.onlineMeetingUrl && (
+                <a
+                  href={event.onlineMeetingUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-emerald-600 hover:underline flex items-center gap-1 font-semibold"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Online Meeting Link</span>
                 </a>
               )}
             </div>
@@ -208,6 +157,7 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
           <button
             onClick={onClose}
             className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
+            title="Close Modal"
           >
             <X className="w-5 h-5" />
           </button>
@@ -221,298 +171,257 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
               <span>Event Cancelled</span>
             </div>
             <p>
-              Cancellation Reason: <span className="font-medium">{event.cancellationReason}</span>
+              Cancellation Reason: <span className="font-medium">{event.cancellationReason || 'No reason specified'}</span>
             </p>
           </div>
         )}
 
-        {/* Capacity & Attendance Analytics Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-5">
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              RSVP vs Capacity
-            </div>
-            <div className="text-xl font-extrabold text-slate-900 mt-1">
-              {event.rsvpCount} <span className="text-xs font-normal text-slate-500">/ {event.capacity} max</span>
-            </div>
-            <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
-              <div
-                className={`h-2 rounded-full ${rsvpPercentage >= 100 ? 'bg-amber-500' : 'bg-chel-600'}`}
-                style={{ width: `${rsvpPercentage}%` }}
-              />
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1">{rsvpPercentage}% capacity filled</div>
-          </div>
+        {/* Description */}
+        <div className="my-5 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+            Event Description & Briefing
+          </h4>
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+            {event.description}
+          </p>
+        </div>
 
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Actual Attendance
+        {/* Phase 1 RSVP Summary Bar */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+          <div className="p-4 rounded-2xl bg-chel-50/60 border border-chel-100">
+            <div className="text-[11px] font-bold text-chel-700 uppercase tracking-wider">
+              Total RSVPs (Going)
             </div>
-            <div className="text-xl font-extrabold text-emerald-600 mt-1">
-              {checkedInAttendees.length}{' '}
-              <span className="text-xs font-normal text-slate-500">checked in</span>
+            <div className="text-2xl font-black text-chel-900 mt-1">
+              {goingAttendees.length}
             </div>
-            <div className="w-full bg-slate-200 rounded-full h-2 mt-2 overflow-hidden">
-              <div
-                className="h-2 rounded-full bg-emerald-500"
-                style={{ width: `${attendancePercentage}%` }}
-              />
-            </div>
-            <div className="text-[10px] text-slate-500 mt-1">
-              {attendancePercentage}% attendance check-in rate
+            <div className="text-[11px] text-chel-600 mt-0.5">
+              Confirmed registered participants
             </div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              Waitlist & Walk-ins
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              Cancelled Reservations
             </div>
-            <div className="text-xl font-extrabold text-purple-600 mt-1">
-              {waitlistedAttendees.length}{' '}
-              <span className="text-xs font-normal text-slate-500">on waitlist</span>
+            <div className="text-2xl font-black text-slate-700 mt-1">
+              {cancelledAttendees.length}
             </div>
-            <div className="text-[11px] text-slate-500 mt-2">
-              Auto-advances when an attendee cancels their reservation.
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Withdrawn or cancelled RSVPs
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              Regional Jurisdiction
+            </div>
+            <div className="text-base font-bold text-slate-900 mt-1">
+              {event.province}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Open to all registered volunteers
             </div>
           </div>
         </div>
 
-        {/* QR Code On-Site Check-in Tool (Crucial for Moderator & Admin!) */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-chel-50 to-sky-50 border border-chel-200/80 mb-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2">
-              <QrCode className="w-5 h-5 text-chel-600" />
-              <div>
-                <h4 className="text-xs font-bold text-slate-900">
-                  On-Site QR & Pass Check-in Scanner
-                </h4>
-                <p className="text-[11px] text-slate-600">
-                  Scan volunteer mobile app QR pass or type pass ID to verify attendance instantly.
-                </p>
-              </div>
-            </div>
-
+        {/* RSVP Management Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
             <button
-              onClick={handleSimulateScanCamera}
-              disabled={isQrScannerActive}
-              className="px-3 py-1.5 bg-chel-600 hover:bg-chel-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors shrink-0"
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${
+                activeTab === 'all'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <Camera className="w-3.5 h-3.5" />
-              <span>{isQrScannerActive ? 'Scanning Camera...' : 'Simulate Camera Scan'}</span>
+              All RSVPs ({attendees.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('going')}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${
+                activeTab === 'going'
+                  ? 'bg-white text-emerald-800 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Going ({goingAttendees.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('cancelled')}
+              className={`px-3 py-1.5 rounded-lg transition-colors ${
+                activeTab === 'cancelled'
+                  ? 'bg-white text-rose-800 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Cancelled ({cancelledAttendees.length})
             </button>
           </div>
 
-          <form onSubmit={handleQuickCheckIn} className="flex gap-2">
-            <input
-              type="text"
-              value={manualQrInput}
-              onChange={(e) => setManualQrInput(e.target.value)}
-              placeholder="e.g. QR-EVT1-USR4-7890 or volunteer email..."
-              className="flex-1 px-3 py-2 text-xs bg-white border border-chel-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-chel-200"
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search volunteer by name/email..."
+                value={attendeeSearch}
+                onChange={(e) => setAttendeeSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-chel-500"
+              />
+            </div>
+
             <button
-              type="submit"
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs"
+              onClick={() => setIsAddAttendeeOpen(!isAddAttendeeOpen)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-chel-600 hover:bg-chel-700 text-white text-xs font-semibold rounded-xl transition-colors shrink-0 shadow-xs"
             >
-              Verify Pass
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Add RSVP</span>
             </button>
+          </div>
+        </div>
+
+        {/* Add Attendee Manual Form */}
+        {isAddAttendeeOpen && (
+          <form
+            onSubmit={handleCreateRSVP}
+            className="p-4 my-4 rounded-2xl bg-slate-50 border border-slate-200 animate-slide-up space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <h5 className="text-xs font-bold text-slate-800">Register Member RSVP</h5>
+              <button
+                type="button"
+                onClick={() => setIsAddAttendeeOpen(false)}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
+              <input
+                type="text"
+                placeholder="Full Name"
+                required
+                value={newAttendeeName}
+                onChange={(e) => setNewAttendeeName(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-chel-500"
+              />
+              <input
+                type="email"
+                placeholder="Email Address"
+                required
+                value={newAttendeeEmail}
+                onChange={(e) => setNewAttendeeEmail(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-chel-500"
+              />
+              <input
+                type="text"
+                placeholder="Mobile Number"
+                value={newAttendeePhone}
+                onChange={(e) => setNewAttendeePhone(e.target.value)}
+                className="px-3 py-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-chel-500"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-chel-600 hover:bg-chel-700 text-white font-bold rounded-xl transition-colors shadow-xs"
+              >
+                Confirm RSVP
+              </button>
+            </div>
           </form>
-        </div>
+        )}
 
-        {/* Attendees Table Section */}
-        <div className="space-y-3">
-          {/* Sub Header & Controls */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            {/* Tabs */}
-            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`px-3 py-1.5 rounded-lg transition-colors ${
-                  activeTab === 'all' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600'
-                }`}
-              >
-                All RSVPs ({attendees.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('checked_in')}
-                className={`px-3 py-1.5 rounded-lg transition-colors ${
-                  activeTab === 'checked_in' ? 'bg-white text-emerald-700 shadow-2xs font-bold' : 'text-slate-600'
-                }`}
-              >
-                Checked In ({checkedInAttendees.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('absent')}
-                className={`px-3 py-1.5 rounded-lg transition-colors ${
-                  activeTab === 'absent' ? 'bg-white text-amber-700 shadow-2xs font-bold' : 'text-slate-600'
-                }`}
-              >
-                Absent ({absentAttendees.length})
-              </button>
-              {waitlistedAttendees.length > 0 && (
-                <button
-                  onClick={() => setActiveTab('waitlist')}
-                  className={`px-3 py-1.5 rounded-lg transition-colors ${
-                    activeTab === 'waitlist' ? 'bg-white text-purple-700 shadow-2xs font-bold' : 'text-slate-600'
-                  }`}
-                >
-                  Waitlist ({waitlistedAttendees.length})
-                </button>
-              )}
-            </div>
+        {/* Attendees Table */}
+        <div className="mt-4 border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200 sticky top-0">
+              <tr>
+                <th className="py-2.5 px-4">Member Name</th>
+                <th className="py-2.5 px-4">Contact Info</th>
+                <th className="py-2.5 px-4">Province</th>
+                <th className="py-2.5 px-4">RSVP Date</th>
+                <th className="py-2.5 px-4">Status</th>
+                <th className="py-2.5 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredAttendees.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    No RSVP records match the selected filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredAttendees.map((attendee) => {
+                  const isGoing = (attendee.status || 'going') === 'going';
 
-            {/* Actions: Search, Add Walk-in, Export CSV */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:flex-initial">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={attendeeSearch}
-                  onChange={(e) => setAttendeeSearch(e.target.value)}
-                  placeholder="Search attendee..."
-                  className="w-full sm:w-44 pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl"
-                />
-              </div>
-
-              <button
-                onClick={() => setIsAddAttendeeOpen(!isAddAttendeeOpen)}
-                className="p-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center gap-1 transition-colors"
-                title="Add Walk-in Attendee"
-              >
-                <UserPlus className="w-4 h-4 text-slate-600" />
-              </button>
-
-              <button
-                onClick={handleExportCSV}
-                className="px-3 py-1.5 text-xs font-semibold text-chel-700 bg-chel-50 hover:bg-chel-100 border border-chel-200 rounded-xl flex items-center gap-1.5 transition-colors shrink-0"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Walk-in Add Form Drawer */}
-          {isAddAttendeeOpen && (
-            <form onSubmit={handleCreateWalkIn} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-              <div className="text-xs font-bold text-slate-900">Add Walk-in Volunteer RSVP</div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                <input
-                  type="text"
-                  placeholder="Full Name *"
-                  value={newAttendeeName}
-                  onChange={(e) => setNewAttendeeName(e.target.value)}
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl"
-                  required
-                />
-                <input
-                  type="email"
-                  placeholder="Email Address *"
-                  value={newAttendeeEmail}
-                  onChange={(e) => setNewAttendeeEmail(e.target.value)}
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl"
-                  required
-                />
-                <input
-                  type="text"
-                  placeholder="Mobile Number"
-                  value={newAttendeePhone}
-                  onChange={(e) => setNewAttendeePhone(e.target.value)}
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-xl"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 bg-chel-600 hover:bg-chel-700 text-white rounded-xl text-xs font-bold"
-                >
-                  Confirm RSVP
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Attendees List Table */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
-            {filteredAttendees.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400">
-                No attendees found in this filter category.
-              </div>
-            ) : (
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <th className="py-2.5 px-3">Volunteer</th>
-                    <th className="py-2.5 px-3">Province</th>
-                    <th className="py-2.5 px-3">Pass QR Code</th>
-                    <th className="py-2.5 px-3">Check-in Status</th>
-                    <th className="py-2.5 px-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredAttendees.map((att) => (
-                    <tr key={att.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="font-bold text-slate-900">{att.userName}</div>
-                        <div className="text-[11px] text-slate-500">{att.userEmail}</div>
+                  return (
+                    <tr key={attendee.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        {attendee.userName}
                       </td>
-                      <td className="py-2.5 px-3 text-slate-600">{att.userProvince}</td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
-                        {att.qrCodeId}
+                      <td className="py-3 px-4 text-slate-500">
+                        <div>{attendee.userEmail}</div>
+                        <div className="text-[10px] text-slate-400">{attendee.userPhone}</div>
                       </td>
-                      <td className="py-2.5 px-3">
-                        {att.checkedIn ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Checked In
-                          </span>
-                        ) : att.waitlisted ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                            Waitlist
+                      <td className="py-3 px-4 text-slate-600">
+                        {attendee.userProvince}
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                        {new Date(attendee.rsvpDate).toLocaleDateString([], {
+                          dateStyle: 'medium'
+                        })}
+                      </td>
+                      <td className="py-3 px-4">
+                        {isGoing ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Going
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                            Pending Arrival
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                            <XCircle className="w-3 h-3 text-rose-500" />
+                            Cancelled
                           </span>
                         )}
                       </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => checkInAttendee(att.id)}
-                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors ${
-                            att.checkedIn
-                              ? 'bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600'
-                              : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
-                          }`}
-                        >
-                          {att.checkedIn ? 'Revert Check-in' : 'Mark Checked In'}
-                        </button>
+                      <td className="py-3 px-4 text-right">
+                        {isGoing && (
+                          <button
+                            onClick={() => cancelRSVP(attendee.id)}
+                            className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Mark RSVP as Cancelled"
+                          >
+                            Mark Cancelled
+                          </button>
+                        )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-5 mt-5 border-t border-slate-100">
+        {/* Modal Actions */}
+        <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
           <div>
             {isAdmin && event.status !== 'cancelled' && (
               <button
-                type="button"
                 onClick={() => setCancelModalOpen(true)}
-                className="px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-1.5"
+                className="px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors border border-rose-200"
               >
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>Cancel Event</span>
+                Cancel Event
               </button>
             )}
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {isAdmin && onOpenEdit && (
               <button
-                type="button"
                 onClick={() => {
                   onClose();
                   onOpenEdit(event);
@@ -522,35 +431,30 @@ export const EventDetailsModal: React.FC<EventDetailsModalProps> = ({
                 Edit Event
               </button>
             )}
+
             <button
-              type="button"
               onClick={onClose}
-              className="px-5 py-2 text-xs font-bold text-white bg-chel-600 hover:bg-chel-700 rounded-xl shadow-xs transition-colors"
+              className="px-5 py-2 text-xs font-semibold text-white bg-chel-600 hover:bg-chel-700 rounded-xl transition-colors shadow-xs"
             >
-              Close Details
+              Done
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Cancel Event Confirmation Modal */}
-      <ConfirmationModal
-        isOpen={cancelModalOpen}
-        onClose={() => setCancelModalOpen(false)}
-        onConfirm={(reason) => {
-          if (reason) {
-            cancelEvent(event.id, reason);
+        {/* Cancel Event Confirmation Dialog */}
+        <ConfirmationModal
+          isOpen={cancelModalOpen}
+          onClose={() => setCancelModalOpen(false)}
+          onConfirm={() => {
+            cancelEvent(event.id, 'Administrative cancellation per volunteer scheduling changes.');
             setCancelModalOpen(false);
-          }
-        }}
-        title="Cancel Volunteer Event"
-        message="Are you sure you want to cancel this event? A mandatory cancellation reason is required and will be dispatched as an automated notification to all registered attendees."
-        confirmLabel="Cancel Event & Notify Attendees"
-        variant="danger"
-        requireReason={true}
-        reasonPlaceholder="e.g. Typhoon warning Signal #2, venue scheduling conflict, or health emergency..."
-      />
+          }}
+          title="Cancel This Event?"
+          message={`Are you sure you want to cancel "${event.title}"? Registered participants will receive a push notification explaining the cancellation.`}
+          confirmLabel="Yes, Cancel Event"
+          variant="danger"
+        />
+      </div>
     </div>
   );
 };
-

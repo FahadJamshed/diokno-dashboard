@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Mail,
@@ -14,9 +14,11 @@ import {
   CheckCircle2,
   Clock,
   UserCheck,
-  MessageSquare
+  MessageSquare,
+  Sparkles,
+  Info
 } from 'lucide-react';
-import { User, UserRole } from '../../../types';
+import { User, UserRole, ModeratorPermission } from '../../../types';
 import { useData } from '../../../context/DataContext';
 import { useAuth } from '../../../context/AuthContext';
 import { Badge } from '../../common/Badge';
@@ -35,23 +37,42 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 }) => {
   const {
     updateUserRole,
-    approveModeratorApplication,
-    rejectModeratorApplication,
+    updateModeratorPermissions,
     processAccountDeletion,
     liftSanction
   } = useData();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSuperAdmin } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'profile' | 'badges' | 'sanctions'>('profile');
   const [selectedRole, setSelectedRole] = useState<UserRole>('volunteer');
+  const [modPermissions, setModPermissions] = useState<ModeratorPermission[]>([]);
   const [roleChangeModalOpen, setRoleChangeModalOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [roleFeedback, setRoleFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setSelectedRole(user.role);
+      setModPermissions(user.moderatorPermissions || ['forum_moderation']);
+      setRoleFeedback(null);
+    }
+  }, [user]);
 
   if (!isOpen || !user) return null;
 
   const handleRoleChangeConfirm = () => {
-    updateUserRole(user.id, selectedRole);
+    const res = updateUserRole(user.id, selectedRole);
+    if (res.success && selectedRole === 'moderator') {
+      updateModeratorPermissions(user.id, modPermissions);
+    }
+    setRoleFeedback(res.success ? 'Role updated successfully.' : (res.error || 'Failed to update role.'));
     setRoleChangeModalOpen(false);
+  };
+
+  const togglePermission = (perm: ModeratorPermission) => {
+    setModPermissions((prev) =>
+      prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]
+    );
   };
 
   const handleDeleteConfirm = () => {
@@ -134,36 +155,7 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
           </div>
         )}
 
-        {/* Moderator Application Alert */}
-        {user.moderatorApplicationStatus === 'pending' && isAdmin && (
-          <div className="my-4 p-4 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Shield className="w-5 h-5 text-amber-600 shrink-0" />
-              <div>
-                <div className="text-xs font-bold text-amber-950">
-                  Moderator Application Pending Approval
-                </div>
-                <div className="text-[11px] text-amber-800">
-                  Volunteer leader applied to become regional community moderator.
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => rejectModeratorApplication(user.id)}
-                className="px-3 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl"
-              >
-                Decline
-              </button>
-              <button
-                onClick={() => approveModeratorApplication(user.id)}
-                className="px-3.5 py-1 text-xs font-bold text-white bg-chel-600 hover:bg-chel-700 rounded-xl shadow-2xs"
-              >
-                Approve Moderator
-              </button>
-            </div>
-          </div>
-        )}
+
 
         {/* Tab Navigation */}
         <div className="flex items-center gap-2 border-b border-slate-200 my-4">
@@ -203,7 +195,7 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
         {activeTab === 'profile' && (
           <div className="space-y-4 text-xs">
             {/* Quick Metrics Bar */}
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-400 uppercase">Profile Status</span>
                 <div className="text-base font-extrabold text-chel-700 mt-0.5">
@@ -222,11 +214,18 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                   {user.communityPostCount} Posts
                 </div>
               </div>
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Gamification</span>
+                <div className="text-base font-extrabold text-amber-600 mt-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {user.points || 0} pts
+                </div>
+              </div>
             </div>
 
-            {/* Demographic Info */}
+            {/* Demographic Info & DPA Compliance */}
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div>
                   <span className="text-[11px] font-semibold text-slate-500">Mobile Number</span>
                   <div className="font-semibold text-slate-800 flex items-center gap-1.5 mt-0.5">
@@ -244,10 +243,32 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 </div>
 
                 <div>
-                  <span className="text-[11px] font-semibold text-slate-500">Organization / Campus</span>
-                  <div className="font-semibold text-slate-800 mt-0.5">
-                    {user.organization || 'Independent Volunteer'}
+                  <span className="text-[11px] font-semibold text-slate-500">Age & Gender</span>
+                  <div className="font-semibold text-slate-800 mt-0.5 capitalize">
+                    {user.age ? `${user.age} yrs` : 'N/A'} • {user.gender || 'Not specified'}
                   </div>
+                </div>
+
+                <div>
+                  <span className="text-[11px] font-semibold text-slate-500">Demographics Consent (DPA)</span>
+                  <div className="mt-0.5">
+                    {user.demographicsConsent ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        R.A. 10173 Consented
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                        Consent Withheld
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[11px] font-semibold text-slate-500">Organization / Campus</span>
+                <div className="font-semibold text-slate-800 mt-0.5">
+                  {user.organization || 'Independent Volunteer'}
                 </div>
               </div>
 
@@ -277,32 +298,80 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
 
             {/* Role Change Control (Admin Only) */}
             {isAdmin && (
-              <div className="p-4 bg-chel-50/50 rounded-2xl border border-chel-200 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-900">Change Administrative Role</div>
-                  <div className="text-[11px] text-slate-500">
-                    Takes effect immediately across all system API endpoints.
+              <div className="p-4 bg-chel-50/50 rounded-2xl border border-chel-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Change Administrative Role</div>
+                    <div className="text-[11px] text-slate-500">
+                      Enforces capacity limits (3 Super Admins, 12 Admins, 150 Moderators).
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedRole}
+                      onChange={(e) => setSelectedRole(e.target.value as UserRole)}
+                      className="px-3 py-1.5 text-xs font-bold bg-white border border-chel-300 rounded-xl"
+                    >
+                      <option value="volunteer">Volunteer Member</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="admin">Administrator</option>
+                      {isSuperAdmin && (
+                        <option value="super_admin">Super Administrator (HQ)</option>
+                      )}
+                    </select>
+                    <button
+                      onClick={() => setRoleChangeModalOpen(true)}
+                      className="px-3 py-1.5 bg-chel-600 hover:bg-chel-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors"
+                    >
+                      Update Role
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value as UserRole)}
-                    className="px-3 py-1.5 text-xs font-bold bg-white border border-chel-300 rounded-xl"
-                  >
-                    <option value="volunteer">Volunteer</option>
-                    <option value="moderator">Moderator</option>
-                    <option value="admin">Administrator</option>
-                  </select>
-                  <button
-                    onClick={() => setRoleChangeModalOpen(true)}
-                    disabled={selectedRole === user.role}
-                    className="px-3 py-1.5 bg-chel-600 hover:bg-chel-700 disabled:opacity-40 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors"
-                  >
-                    Update Role
-                  </button>
-                </div>
+                {/* Granular Moderator Permissions */}
+                {selectedRole === 'moderator' && (
+                  <div className="pt-3 border-t border-chel-200/60 bg-white/70 p-3 rounded-xl border border-chel-100">
+                    <div className="text-[11px] font-bold text-chel-900 mb-2">
+                      Assigned Moderator Permissions (ADM-01 / ADM-07):
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={modPermissions.includes('forum_moderation')}
+                          onChange={() => togglePermission('forum_moderation')}
+                          className="rounded text-chel-600 focus:ring-chel-500"
+                        />
+                        <span>Forum Moderation</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={modPermissions.includes('proof_review')}
+                          onChange={() => togglePermission('proof_review')}
+                          className="rounded text-chel-600 focus:ring-chel-500"
+                        />
+                        <span>Proof Review</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={modPermissions.includes('content_drafting')}
+                          onChange={() => togglePermission('content_drafting')}
+                          className="rounded text-chel-600 focus:ring-chel-500"
+                        />
+                        <span>Content Drafting</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {roleFeedback && (
+                  <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] font-semibold animate-fade-in">
+                    {roleFeedback}
+                  </div>
+                )}
               </div>
             )}
           </div>
