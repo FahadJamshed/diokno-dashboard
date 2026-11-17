@@ -95,6 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'notifications', label: 'Push Notifications', icon: Bell, adminOnly: true },
     {
+      
       id: 'chat',
       label: 'Chat with Chel',
       icon: Bot,
